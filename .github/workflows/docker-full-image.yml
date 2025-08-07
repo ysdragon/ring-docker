@@ -1,0 +1,164 @@
+name: Ring Docker Image CI (Full)
+
+on:
+  push:
+    branches: [ "master" ]
+    paths-ignore:
+    - '**.md'
+    - '.github/workflows/docker-light-image.yml'
+    - 'Dockerfile.light'
+  release:
+    types: [ published ]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: amd64
+          os: ubuntu-24.04
+        - arch: arm64
+          os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+    - name: Login to GitHub Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Login to Quay.io
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: quay.io
+        username: ${{ secrets.QUAY_USERNAME }}
+        password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+    - name: Extract Docker metadata for labels
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          quay.io/ydrag0n/ring
+          ghcr.io/ysdragon/ring
+          ${{ secrets.DOCKER_HUB_USERNAME }}/ring
+
+    - name: Build and push arch-specific image
+      id: build-and-push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile
+        platforms: linux/${{ matrix.arch }}
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: |
+          quay.io/ydrag0n/ring:${{ github.sha }}-${{ matrix.arch }}
+          ghcr.io/ysdragon/ring:${{ github.sha }}-${{ matrix.arch }}
+          ${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-${{ matrix.arch }}
+        labels: ${{ steps.meta.outputs.labels }}
+        provenance: false
+        cache-from: type=gha,scope=build-${{ matrix.arch }}
+        cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+
+  push:
+    needs: [ build ]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Login to Quay.io
+      uses: docker/login-action@v3
+      with:
+        registry: quay.io
+        username: ${{ secrets.QUAY_USERNAME }}
+        password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+    - name: Extract Docker metadata for final tags
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          quay.io/ydrag0n/ring
+          ghcr.io/ysdragon/ring
+          ${{ secrets.DOCKER_HUB_USERNAME }}/ring
+        tags: |
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=full,enable={{is_default_branch}}
+
+    - name: Create and push manifest list
+      run: |
+        FINAL_TAGS="${{ steps.meta.outputs.tags }}"
+
+        echo "Creating and pushing manifest for tags:"
+        echo "$FINAL_TAGS"
+
+        for tag in $FINAL_TAGS; do
+          echo "--> Processing tag: $tag"
+          
+          # Extract registry from tag
+          if [[ "$tag" == quay.io/* ]]; then
+            IMG_AMD64="quay.io/ydrag0n/ring:${{ github.sha }}-amd64"
+            IMG_ARM64="quay.io/ydrag0n/ring:${{ github.sha }}-arm64"
+          elif [[ "$tag" == ghcr.io/* ]]; then
+            IMG_AMD64="ghcr.io/ysdragon/ring:${{ github.sha }}-amd64"
+            IMG_ARM64="ghcr.io/ysdragon/ring:${{ github.sha }}-arm64"
+          else
+            IMG_AMD64="${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-amd64"
+            IMG_ARM64="${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-arm64"
+          fi
+          
+          docker manifest create "$tag" "$IMG_AMD64" "$IMG_ARM64"
+          docker manifest push "$tag"
+        done
+
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@v3.9.1
+
+    - name: Sign the published Docker images
+      env:
+        COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        TAGS: ${{ steps.meta.outputs.tags }}
+      run: |
+        echo "Signing the following tags:"
+        echo "${TAGS}"
+        echo "${TAGS}" | while IFS= read -r tag; do
+          if [ -n "$tag" ]; then
+            echo "--> Signing $tag"
+            cosign sign --key env://COSIGN_KEY --yes "$tag"
+          fi
+        done
