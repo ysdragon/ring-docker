@@ -2,7 +2,7 @@
 
 [![Full Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/docker-full-image.yml?label=Full%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/docker-full-image.yml)
 [![Light Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/docker-light-image.yml?label=Light%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/docker-light-image.yml)
-[![Docker Hub](https://img.shields.io/docker/pulls/ysdragon/ring.svg)](https://hub.docker.com/r/ysdragon/ring)
+[![Docker Pulls](https://img.shields.io/docker/pulls/ysdragon/ring?logo=docker)](https://hub.docker.com/r/ysdragon/ring)
 [![License](https://img.shields.io/github/license/ysdragon/ring-docker.svg)](https://github.com/ysdragon/ring-docker/blob/main/LICENSE)
 
 This repository contains the Dockerfiles and associated scripts to build Docker images for the [Ring programming language](https://ring-lang.github.io/). The images are available in two flavors: `full` and `light`.
