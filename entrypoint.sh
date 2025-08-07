@@ -27,7 +27,7 @@ if [ -n "$RING_VERSION" ] && [ "$RING_VERSION" != "v1.23" ]; then
 
     # Check the RING_VERSION and apply patches if it's under v1.22
     version_num=$(echo "$RING_VERSION" | sed 's/^v//')
-    if [ "$(echo "$version_num < 1.22" | bc)" -eq 1 ]; then
+    if [ "$(echo "$version_num < 1.22" | bc)" -eq 1 ] && [ "$RING_VERSION" != "master" ]; then
         echo "Applying patches for versions older than v1.22..."
         git apply /patches/ringpdfgen.patch && \
         git apply /patches/ringfastpro.patch
