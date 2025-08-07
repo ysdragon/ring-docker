@@ -55,7 +55,13 @@ The `light` image is a minimal version designed for command-line applications, s
 To run a Ring script, you can mount your project directory into the `/app` directory in the container and specify the script to run.
 
 ```bash
-docker run -v $(pwd):/app ysdragon/ring:latest -e RING_FILE=myapp.ring
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:latest
+```
+
+For the light image:
+
+```bash
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:light
 ```
 
 ### Switching Ring Versions
@@ -63,7 +69,7 @@ docker run -v $(pwd):/app ysdragon/ring:latest -e RING_FILE=myapp.ring
 You can specify a different Ring version by setting the `RING_VERSION` environment variable.
 
 ```bash
-docker run -v $(pwd):/app -e RING_VERSION=1.22 ysdragon/ring:latest -e RING_FILE=myapp.ring
+docker run --rm -v $(pwd):/app -e RING_VERSION=1.22 -e RING_FILE=myapp.ring ysdragon/ring:latest
 ```
 
 ### Installing Packages
@@ -71,7 +77,7 @@ docker run -v $(pwd):/app -e RING_VERSION=1.22 ysdragon/ring:latest -e RING_FILE
 You can install Ring packages from the Ring Package Manager (`ringpm`) by setting the `RING_PACKAGES` environment variable.
 
 ```bash
-docker run -v $(pwd):/app -e RING_PACKAGES="jsonlib" ysdragon/ring:latest -e RING_FILE=myapp.ring
+docker run --rm -v $(pwd):/app -e RING_PACKAGES="jsonlib" -e RING_FILE=myapp.ring ysdragon/ring:latest
 ```
 
 ### Creating an Executable
@@ -79,7 +85,7 @@ docker run -v $(pwd):/app -e RING_PACKAGES="jsonlib" ysdragon/ring:latest -e RIN
 To compile your Ring script into a standalone executable, set the `RING_OUTPUT_EXE` environment variable to `true`.
 
 ```bash
-docker run -v $(pwd):/app -e RING_FILE=myapp.ring -e RING_OUTPUT_EXE=true ysdragon/ring:latest
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring -e RING_OUTPUT_EXE=true ysdragon/ring:latest
 ```
 
 ## Environment Variables
