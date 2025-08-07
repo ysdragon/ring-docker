@@ -1,12 +1,28 @@
 #!/bin/bash
 
 # Check if we need to switch Ring versions
-if [ -n "$RING_VERSION" ] && [ "$RING_VERSION" != "v1.23" ]; then
-    # Add 'v' prefix if it doesn't exist
-    if [[ ! "$RING_VERSION" =~ ^v ]]; then
+if [ -n "$RING_VERSION" ]; then
+    # Add 'v' prefix if it doesn't exist, but not for branch names like master
+    if [[ ! "$RING_VERSION" =~ ^v ]] && [ "$RING_VERSION" != "master" ]; then
         RING_VERSION="v$RING_VERSION"
     fi
-    echo "Switching Ring version to $RING_VERSION..."
+    
+    # Get current Ring version
+    pushd /opt/ring > /dev/null
+    CURRENT_VERSION=$(git describe --tags --exact-match HEAD 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    popd > /dev/null
+    
+    # Only switch if the requested version is different from current
+    if [ "$RING_VERSION" != "$CURRENT_VERSION" ]; then
+        echo "Switching Ring version from $CURRENT_VERSION to $RING_VERSION..."
+    else
+        echo "Ring version $RING_VERSION is already active, skipping version switch..."
+        # Skip to package installation and execution
+        RING_VERSION=""
+    fi
+fi
+
+if [ -n "$RING_VERSION" ]; then
     # Navigate to the ring directory
     pushd /opt/ring
     
@@ -52,11 +68,51 @@ if [ -n "$RING_VERSION" ] && [ "$RING_VERSION" != "v1.23" ]; then
     # Build the project
     echo "Building Ring from source..."
     cd build
-    if bash buildgcc.sh; then
-        echo "Ring built successfully."
+    
+    # Check if we're running in the light variant using RING_VARIANT environment variable
+    if [ "$RING_VARIANT" = "light" ]; then
+        echo "Building light variant with selected extensions..."
+        
+        # Remove unnecessary directories like in Dockerfile.light
+        cd ..
+        rm -rf applications documents marketing samples \
+            tools/editors tools/formdesigner tools/help2wiki tools/ringnotepad tools/string2constant tools/ringrepl tools/tryringonline tools/folder2qrc tools/findinfiles language/tests \
+            extensions/android extensions/libdepwin extensions/ringfreeglut extensions/ringallegro extensions/ringbeep extensions/ringmouseevent extensions/ringnappgui extensions/ringwinapi extensions/ringwincreg extensions/ringwinlib extensions/ringraylib5 extensions/ringtilengine extensions/ringlibui extensions/ringqt extensions/ringrogueutil extensions/ringsdl extensions/webassembly extensions/tutorial extensions/microcontroller
+        cd build
+        
+        if bash buildgcc.sh -ring \
+            -ringmurmurhash \
+            -ringzip \
+            -ringhttplib \
+            -ringmysql \
+            -ringthreads \
+            -ringcjson \
+            -ringinternet \
+            -ringodbc \
+            -ringpdfgen \
+            -ringconsolecolors \
+            -ringcurl \
+            -ringlibuv \
+            -ringopenssl \
+            -ringsockets \
+            -ringfastpro \
+            -ringpostgresql \
+            -ringsqlite \
+            -ring2exe \
+            -ringpm; then
+            echo "Ring light variant built successfully."
+        else
+            echo "Failed to build Ring light variant from source."
+            exit 1
+        fi
     else
-        echo "Failed to build Ring from source."
-        exit 1
+        echo "Building full variant with all extensions..."
+        if bash buildgcc.sh; then
+            echo "Ring built successfully."
+        else
+            echo "Failed to build Ring from source."
+            exit 1
+        fi
     fi
     cd ../bin
     bash install.sh
