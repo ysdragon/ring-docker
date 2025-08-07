@@ -2,6 +2,10 @@
 
 # Check if we need to switch Ring versions
 if [ -n "$RING_VERSION" ] && [ "$RING_VERSION" != "v1.23" ]; then
+    # Add 'v' prefix if it doesn't exist
+    if [[ ! "$RING_VERSION" =~ ^v ]]; then
+        RING_VERSION="v$RING_VERSION"
+    fi
     echo "Switching Ring version to $RING_VERSION..."
     # Navigate to the ring directory
     pushd /opt/ring
