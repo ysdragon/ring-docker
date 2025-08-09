@@ -1,0 +1,51 @@
+name: Update Ring Language Version
+
+on:
+  schedule:
+  - cron: '0 3 * * *'
+  workflow_dispatch:
+
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get latest Ring version from GitHub API
+      id: latest_version
+      run: |
+        LATEST_TAG=$(curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ring-lang/ring/releases/latest | jq -r .tag_name)
+        # The tag is usually 'v1.23', we need to strip the 'v'
+        LATEST_VERSION=${LATEST_TAG#v}
+        echo "Latest Ring version: $LATEST_VERSION"
+        echo "version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Get current version from Dockerfile
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(grep 'ARG RING_VERSION_ARG=' Dockerfile | cut -d'=' -f2)
+        echo "Current version in Dockerfile: $CURRENT_VERSION"
+        echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Compare versions and update if needed
+      id: update_files
+      if: steps.latest_version.outputs.version != steps.current_version.outputs.version
+      run: |
+        echo "New version found. Updating Dockerfile and Dockerfile.light..."
+        sed -i "s/ARG RING_VERSION_ARG=${{ steps.current_version.outputs.version }}/ARG RING_VERSION_ARG=${{ steps.latest_version.outputs.version }}/" Dockerfile Dockerfile.light
+        echo "Files updated."
+        echo "updated=true" >> "$GITHUB_OUTPUT"
+
+    - name: Commit and push changes
+      if: steps.update_files.outputs.updated == 'true'
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add Dockerfile Dockerfile.light
+        git commit -m "Bump Ring language to v${{ steps.latest_version.outputs.version }}"
+        git push
