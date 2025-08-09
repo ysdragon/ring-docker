@@ -1,0 +1,28 @@
+name: Revert on Failure
+
+on:
+  workflow_run:
+    workflows: [ "Ring Docker Image CI (Full)", "Ring Docker Image CI (Light)" ]
+    types:
+    - completed
+
+permissions:
+  contents: write
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.actor == 'github-actions[bot]'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Revert the failing commit
+      run: |
+        echo "Build failed for commit ${{ github.event.workflow_run.head_sha }}. Reverting..."
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git revert --no-edit ${{ github.event.workflow_run.head_sha }}
+        git push
