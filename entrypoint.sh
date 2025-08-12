@@ -16,7 +16,6 @@ if [ -n "$RING_VERSION" ]; then
     if [ "$RING_VERSION" != "$CURRENT_VERSION" ]; then
         echo "Switching Ring version from $CURRENT_VERSION to $RING_VERSION..."
     else
-        echo "Ring version $RING_VERSION is already active, skipping version switch..."
         # Skip to package installation and execution
         RING_VERSION=""
     fi
