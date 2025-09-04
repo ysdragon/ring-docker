@@ -1,7 +1,7 @@
 # Ring Docker Images
 
-[![Full Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/docker-full-image.yml?label=Full%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/docker-full-image.yml)
-[![Light Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/docker-light-image.yml?label=Light%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/docker-light-image.yml)
+[![Full Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/main.yml?label=Full%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/main.yml)
+[![Light Image CI](https://img.shields.io/github/actions/workflow/status/ysdragon/ring-docker/main.yml?label=Light%20Image%20CI&logo=github)](https://github.com/ysdragon/ring-docker/actions/workflows/main.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/ysdragon/ring?logo=docker)](https://hub.docker.com/r/ysdragon/ring)
 [![License](https://img.shields.io/github/license/ysdragon/ring-docker.svg)](https://github.com/ysdragon/ring-docker/blob/main/LICENSE)
 
@@ -15,11 +15,12 @@ These images are automatically built and pushed to:
 
 ## Features
 
-*   **Multiple Flavors:** Choose between a `full` image with extensive libraries or a `light` image for minimal needs.
+*   **Multiple Flavors:** Choose between a `full` image with extensive libraries, a `light` image for minimal needs, or nightly images for the latest development builds.
+*   **Nightly Builds:** Access the latest development versions through nightly images built daily from the master branch.
 *   **Version Switching:** Easily switch between different versions of the Ring language.
 *   **Package Management:** Install Ring packages using `ringpm` within the container.
 *   **Executable Creation:** Compile your Ring scripts into distributable executables.
-*   **Multi-platform:** The `full` image is built for `linux/amd64` and `linux/arm64`. The `light` image supports `linux/amd64`, `linux/arm64`, and `linux/riscv64`.
+*   **Multi-platform:** The `full` and `nightly-full` images are built for `linux/amd64` and `linux/arm64`. The `light` and `nightly-light` images support `linux/amd64`, `linux/arm64`, and `linux/riscv64`.
 
 ## Image Flavors
 
@@ -48,6 +49,14 @@ The `light` image is a minimal version designed for command-line applications, s
 *   Threads
 *   Zip
 
+### `nightly-full`
+
+The `nightly-full` (or `nightly`) image is the full image built daily from the latest master branch of the Ring repository. It includes the same extensive libraries as the `full` image but incorporates the most recent changes and bug fixes from ongoing development.
+
+### `nightly-light`
+
+The `nightly-light` image is the light image built daily from the latest master branch, offering the minimal version with the same extensions as the `light` image, ensuring access to the latest features and improvements.
+
 ## Usage
 
 ### Running a Ring Script
@@ -55,13 +64,17 @@ The `light` image is a minimal version designed for command-line applications, s
 To run a Ring script, you can mount your project directory into the `/app` directory in the container and specify the script to run.
 
 ```bash
+# For the latest stable full image
 docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:latest
-```
 
-For the light image:
-
-```bash
+# For the light image
 docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:light
+
+# For the nightly full image (latest from master branch)
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:nightly
+
+# For the nightly light image
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:nightly-light
 ```
 
 ### Switching Ring Versions
@@ -69,7 +82,11 @@ docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:light
 You can specify a different Ring version by setting the `RING_VERSION` environment variable.
 
 ```bash
+# For the latest image
 docker run --rm -v $(pwd):/app -e RING_VERSION=1.22 -e RING_FILE=myapp.ring ysdragon/ring:latest
+
+# Same applies for nightly, or nightly-light with the appropriate tag
+docker run --rm -v $(pwd):/app -e RING_VERSION=1.22 -e RING_FILE/myapp.ring ysdragon/ring:light
 ```
 
 ### Installing Packages
@@ -77,7 +94,14 @@ docker run --rm -v $(pwd):/app -e RING_VERSION=1.22 -e RING_FILE=myapp.ring ysdr
 You can install Ring packages from the Ring Package Manager (`ringpm`) by setting the `RING_PACKAGES` environment variable.
 
 ```bash
+# For the full image
 docker run --rm -v $(pwd):/app -e RING_PACKAGES="jsonlib" -e RING_FILE=myapp.ring ysdragon/ring:latest
+
+# For nightly full
+docker run --rm -v $(pwd):/app -e RING_PACKAGES="jsonlib" -e RING_FILE=myapp.ring ysdragon/ring:nightly
+
+# For nightly light
+docker run --rm -v $(pwd):/app -e RING_PACKAGES="jsonlib" -e RING_FILE=myapp.ring ysdragon/ring:nightly-light
 ```
 
 ### Creating an Executable
@@ -86,6 +110,9 @@ To compile your Ring script into a standalone executable, set the `RING_OUTPUT_E
 
 ```bash
 docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring -e RING_OUTPUT_EXE=true ysdragon/ring:latest
+
+# Or with nightly
+docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring -e RING_OUTPUT_EXE=true ysdragon/ring:nightly
 ```
 
 ## Environment Variables
