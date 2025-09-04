@@ -1,0 +1,104 @@
+# Stage 1: Builder
+FROM ubuntu:24.04 AS builder
+
+# Set environment variables to reduce interaction during package installation
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Install necessary build packages
+RUN apt-get update && apt-get install -y -qq --no-install-recommends \
+    bc \
+    gcc \
+    g++ \
+    ca-certificates \
+    git \
+    unixodbc \
+    unixodbc-dev \
+    libmariadb-dev-compat \
+    libpq-dev \
+    libcurl4-gnutls-dev \
+    libssl-dev \
+    libuv1-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
+
+# Create /opt/ring directory
+RUN mkdir -p /opt/ring
+
+# Clone Ring from master branch for nightly builds
+WORKDIR /opt/ring
+RUN git clone --depth 1 --branch master -q https://github.com/ring-lang/ring .
+
+# Reduce image size by removing unnecessary directories
+RUN rm -rf applications documents marketing samples \
+    tools/editors tools/formdesigner tools/help2wiki tools/ringnotepad tools/string2constant tools/ringrepl tools/tryringonline tools/folder2qrc tools/findinfiles language/tests \
+    extensions/android extensions/libdepwin extensions/ringfreeglut extensions/ringallegro extensions/ringbeep extensions/ringmouseevent extensions/ringnappgui extensions/ringwinapi extensions/ringwincreg extensions/ringwinlib extensions/ringraylib5 extensions/ringtilengine extensions/ringlibui extensions/ringqt extensions/ringrogueutil extensions/ringsdl extensions/webassembly extensions/tutorial extensions/microcontroller
+
+RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
+    && find . -type f -name "*.sh" -exec sed -i 's/-L \/usr\/lib\/i386-linux-gnu//g' {} + \
+    && sed -i 's/-L \/usr\/local\/pgsql\/lib//g' extensions/ringpostgresql/buildgcc.sh \
+    && cd build \
+    && bash buildgcc.sh -ring \
+        -ringmurmurhash \
+        -ringzip \
+        -ringhttplib \
+        -ringmysql \
+        -ringthreads \
+        -ringcjson \
+        -ringinternet \
+        -ringodbc \
+        -ringpdfgen \
+        -ringconsolecolors \
+        -ringcurl \
+        -ringlibuv \
+        -ringopenssl \
+        -ringsockets \
+        -ringfastpro \
+        -ringpostgresql \
+        -ringsqlite \
+        -ring2exe \
+        -ringpm \
+    && cd .. && bin/install.sh
+
+# Stage 2: Runtime
+FROM ubuntu:24.04 AS runtime
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    RING_VARIANT=light
+
+# Install necessary packages
+RUN apt-get update && apt-get install -y -qq --no-install-recommends \
+    bc \
+    gcc \
+    g++ \
+    ca-certificates \
+    git \
+    unixodbc \
+    unixodbc-dev \
+    libmariadb-dev-compat \
+    libpq-dev \
+    libcurl4-gnutls-dev \
+    libssl-dev \
+    libuv1-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
+
+# Copy installed Ring components from the builder stage
+COPY --from=builder /opt/ring /opt/ring
+COPY --from=builder /usr/bin /usr/bin
+COPY --from=builder /usr/lib /usr/lib
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Set the working directory for the application
+WORKDIR /app
+
+# Set the entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
