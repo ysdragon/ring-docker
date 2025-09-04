@@ -2,7 +2,7 @@ name: Revert on Failure
 
 on:
   workflow_run:
-    workflows: [ "Ring Docker Image CI (Full)", "Ring Docker Image CI (Light)" ]
+    workflows: [ "Ring Docker CI" ]
     types:
     - completed
 
