@@ -115,8 +115,6 @@ jobs:
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: ${{ needs.setup.outputs.is_nightly == 'false' && 'type=gha,scope=build-${{ matrix.variant }}' || '' }}
-        cache-to: ${{ needs.setup.outputs.is_nightly == 'false' && 'type=gha,mode=max,scope=build-${{ matrix.variant }}' || '' }}
         
   build-matrix:
     name: Build Matrix ${{ matrix.variant }} - ${{ matrix.arch }}
@@ -167,8 +165,6 @@ jobs:
           ghcr.io/ysdragon/ring:${{ github.sha }}-${{ matrix.arch }}
           ${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-${{ matrix.arch }}
         provenance: false
-        cache-from: ${{ needs.setup.outputs.is_nightly == 'false' && 'type=gha,scope=build-${{ matrix.arch }}' || '' }}
-        cache-to: ${{ needs.setup.outputs.is_nightly == 'false' && 'type=gha,mode=max,scope=build-${{ matrix.arch }}' || '' }}
 
   manifest:
     name: Create Multi-arch Manifests
