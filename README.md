@@ -120,7 +120,7 @@ docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring -e RING_OUTPUT_EXE=true y
 | Variable          | Description                                                                                             | Default |
 | ----------------- | ------------------------------------------------------------------------------------------------------- | ------- |
 | `RING_FILE`       | The path to the Ring script to execute. This is a **required** variable.                                  |         |
-| `RING_VERSION`    | The version of the Ring language to use (e.g., `1.22`).                                                   | `1.23`  |
+| `RING_VERSION`    | The version of the Ring language to use (e.g., `1.24`).                                                   | `1.24`  |
 | `RING_PACKAGES`   | A space-separated list of Ring packages to install using `ringpm`.                                        |         |
 | `RING_OUTPUT_EXE` | If set to `true`, compiles the Ring script into an executable.                                            | `false` |
 | `RING_ARGS`       | Additional arguments to pass to the Ring Compiler/VM or `Ring2EXE`.                                       |         |
