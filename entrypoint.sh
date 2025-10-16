@@ -38,14 +38,23 @@ if [ -n "$RING_VERSION" ]; then
 
     # Checkout the fetched version
     echo "Checking out version: $RING_VERSION"
-    git checkout -f FETCH_HEAD > /dev/null 2>&1
+    if ! git checkout -f FETCH_HEAD > /dev/null 2>&1; then
+        echo "Error: Failed to checkout $RING_VERSION"
+        exit 1
+    fi
 
     # Check the RING_VERSION and apply patches if it's under v1.22
     version_num=$(echo "$RING_VERSION" | sed 's/^v//')
     if [ "$(echo "$version_num < 1.22" | bc)" -eq 1 ] && [ "$RING_VERSION" != "master" ]; then
         echo "Applying patches for versions older than v1.22..."
-        git apply /patches/ringpdfgen.patch && \
-        git apply /patches/ringfastpro.patch
+        if ! git apply /patches/ringpdfgen.patch; then
+            echo "Error: Failed to apply ringpdfgen.patch"
+            exit 1
+        fi
+        if ! git apply /patches/ringfastpro.patch; then
+            echo "Error: Failed to apply ringfastpro.patch"
+            exit 1
+        fi
     fi
 
     # Apply necessary build modifications for the new version
@@ -114,7 +123,16 @@ if [ -n "$RING_VERSION" ]; then
         fi
     fi
     cd ../bin
-    bash install.sh
+    if ! bash install.sh; then
+        echo "Error: Failed to install Ring"
+        exit 1
+    fi
+    
+    # Verify Ring binary exists and is executable
+    if ! command -v ring &> /dev/null; then
+        echo "Error: Ring binary not found after installation"
+        exit 1
+    fi
     
     # Return to the previous directory
     popd
@@ -122,47 +140,52 @@ fi
 
 # Check if the RING_PACKAGES is not empty
 if [ -n "$RING_PACKAGES" ]; then
-    # Split the RING string into an array of words
-    IFS=' ' read -r -a words <<< "$RING_PACKAGES"
-    
-    declare -a packages
-    i=0
-    n_words=${#words[@]}
-    while [ $i -lt $n_words ]; do
-        # Check for the pattern "<package> from <user>"
-        if [ $((i + 2)) -lt $n_words ] && [ "${words[$i+1]}" = "from" ]; then
-            packages+=("${words[$i]} from ${words[$i+2]}")
-            i=$((i + 3))
-        else
-            packages+=("${words[$i]}")
-            i=$((i + 1))
-        fi
-    done
-
-    # Loop through each reconstructed package and install it
-    for package in "${packages[@]}"; do
-        echo "Installing $package..."
-        ringpm install "$package"
+    echo "$RING_PACKAGES" | while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        
+        # Parse the line into package specifications
+        package_args=()
+        words=($line)
+        i=0
+        while [ $i -lt ${#words[@]} ]; do
+            package="${words[$i]}"
+            
+            # Check if next two words are "from username"
+            if [ $((i + 2)) -lt ${#words[@]} ] && [ "${words[$((i + 1))]}" = "from" ]; then
+                username="${words[$((i + 2))]}"
+                ringpm install "$package" from "$username"
+                i=$((i + 3))
+            else
+                ringpm install "$package"
+                i=$((i + 1))
+            fi
+        done
     done
 fi
 
-# Check if the RING_OUTPUT_EXE is 'true'
-if [ "$RING_OUTPUT_EXE" = "true" ]; then
-    # Create executable from Ring source
-    SCRIPT_DIR=$(dirname "$RING_FILE")
-    SCRIPT_BASE=$(basename "$RING_FILE")
-    
-    pushd "$SCRIPT_DIR" > /dev/null
-    ring2exe $RING_ARGS "$SCRIPT_BASE"
-    popd > /dev/null
-else
-    # Run Ring script directly
-    SCRIPT_DIR=$(dirname "$RING_FILE")
-    SCRIPT_BASE=$(basename "$RING_FILE")
+# Check if RING_FILE is set before attempting execution
+if [ -n "$RING_FILE" ]; then
+    # Check if the RING_OUTPUT_EXE is 'true'
+    if [ "$RING_OUTPUT_EXE" = "true" ]; then
+        # Create executable from Ring source
+        SCRIPT_DIR=$(dirname "$RING_FILE")
+        SCRIPT_BASE=$(basename "$RING_FILE")
+        
+        pushd "$SCRIPT_DIR" > /dev/null
+        ring2exe $RING_ARGS "$SCRIPT_BASE"
+        popd > /dev/null
+    else
+        # Run Ring script directly
+        SCRIPT_DIR=$(dirname "$RING_FILE")
+        SCRIPT_BASE=$(basename "$RING_FILE")
 
-    pushd "$SCRIPT_DIR" > /dev/null
+        pushd "$SCRIPT_DIR" > /dev/null
 
-    ring $RING_ARGS "$SCRIPT_BASE"
-    
-    popd > /dev/null
+        ring $RING_ARGS "$SCRIPT_BASE"
+        
+        popd > /dev/null
+    fi
+elif [ $# -gt 0 ]; then
+    # If no RING_FILE but arguments are provided, execute them directly
+    exec "$@"
 fi
