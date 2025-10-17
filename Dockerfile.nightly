@@ -201,7 +201,8 @@ RUN apt-get update && apt-get install -y -qq --no-install-recommends \
 
 # Copy installed Ring components from the builder stage
 COPY --from=builder /opt/ring /opt/ring
-COPY --from=builder /usr /usr
+COPY --from=builder /usr/bin /usr/bin
+COPY --from=builder /usr/lib /usr/lib
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

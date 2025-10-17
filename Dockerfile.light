@@ -98,8 +98,9 @@ COPY --from=builder /opt/ring /opt/ring
 COPY --from=builder /usr/bin /usr/bin
 COPY --from=builder /usr/lib /usr/lib
 
-COPY entrypoint.sh /entrypoint.sh
 COPY patches /patches
+
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Set the working directory for the application
