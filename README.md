@@ -77,6 +77,56 @@ docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:nightly
 docker run --rm -v $(pwd):/app -e RING_FILE=myapp.ring ysdragon/ring:nightly-light
 ```
 
+## Using the Images in Dockerfiles
+
+You can use these Ring Docker images as base images in your own Dockerfiles. Here are some examples:
+
+<details>
+<summary>Using Environment Variables</summary>
+
+#### Example
+
+```dockerfile
+FROM ysdragon/ring:latest
+
+# Copy your Ring application
+COPY . /app
+
+# Set the working directory
+WORKDIR /app
+
+# Install packages using environment variable (handled by entrypoint)
+ENV RING_PACKAGES="jsonlib"
+
+# Specify the Ring script to run
+ENV RING_FILE=myapp.ring
+```
+
+</details>
+
+<details>
+<summary>Using Regular Commands</summary>
+
+#### Example
+
+```dockerfile
+FROM ysdragon/ring:latest
+
+# Copy your Ring application
+COPY . /app
+
+# Set the working directory
+WORKDIR /app
+
+# Install packages (optional)
+RUN ringpm install jsonlib
+
+# Specify the Ring script to run
+CMD ["ring", "myapp.ring"]
+```
+
+</details>
+
 ### Switching Ring Versions
 
 You can specify a different Ring version by setting the `RING_VERSION` environment variable.
