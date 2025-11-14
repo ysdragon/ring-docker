@@ -1,0 +1,86 @@
+name: Version Update Failure Notification
+
+on:
+  workflow_run:
+    workflows: ["Update Ring Language Version"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+    - name: Create Issue for Failed Build
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const runUrl = context.payload.workflow_run.html_url;
+          const commitSha = context.payload.workflow_run.head_sha;
+          const commitMessage = context.payload.workflow_run.head_commit.message.split('\n')[0];
+          const author = context.payload.workflow_run.head_commit.author.name;
+          const branch = context.payload.workflow_run.head_branch;
+          
+          // Check if an issue already exists for this SHA
+          const existingIssues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            labels: 'ci-failure',
+            per_page: 100
+          });
+          
+          const issueExists = existingIssues.data.some(issue => 
+            issue.body && issue.body.includes(commitSha)
+          );
+          
+          if (issueExists) {
+            console.log(`Issue already exists for commit ${commitSha}`);
+            return;
+          }
+          
+          // Create new issue
+          const issueBody = [
+            '## 🚨 Ring Version Update Failed',
+            '',
+            `**Workflow Run:** [View Details](${runUrl})`,
+            '',
+            '### Commit Information',
+            `- **SHA:** \`${commitSha}\``,
+            `- **Author:** ${author}`,
+            `- **Branch:** \`${branch}\``,
+            `- **Message:** ${commitMessage}`,
+            '',
+            '### What Happened',
+            'The automated Ring language version update workflow failed. This typically happens when:',
+            '- Unable to fetch the latest Ring version from GitHub API',
+            '- Version comparison or file update logic failed',
+            '- Git push operation encountered an error',
+            '',
+            '### Next Steps',
+            '1. **Check the logs:** Review the [workflow logs](${runUrl}) for specific error details',
+            '2. **Manual update:** If needed, manually update the Ring version in `Dockerfile` and `Dockerfile.light`',
+            '3. **Verify GitHub API:** Ensure Ring repository releases are accessible',
+            '4. **Check permissions:** Verify workflow has correct write permissions',
+            '',
+            '### Investigation Checklist',
+            '- [ ] Review workflow logs for error messages',
+            '- [ ] Check if new Ring version exists: https://github.com/ring-lang/ring/releases/latest',
+            '- [ ] Verify Dockerfiles use correct version format',
+            '- [ ] Test version update script locally if needed',
+            '',
+            'Close this issue once the version update is completed successfully.'
+          ].join('\n');
+          
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Ring Version Update Failed: ${commitMessage}`,
+            body: issueBody,
+            labels: ['version-update', 'automation-failure']
+          });
+          
+          console.log(`Created issue #${issue.data.number}`);

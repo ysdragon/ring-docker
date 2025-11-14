@@ -38,8 +38,19 @@ jobs:
       id: update_files
       if: steps.latest_version.outputs.version != steps.current_version.outputs.version
       run: |
-        echo "New version found. Updating Dockerfile and Dockerfile.light..."
-        sed -i "s/ARG RING_VERSION_ARG=${{ steps.current_version.outputs.version }}/ARG RING_VERSION_ARG=${{ steps.latest_version.outputs.version }}/" Dockerfile Dockerfile.light
+        echo "New version found. Updating stable Dockerfile variants..."
+        
+        # Only update stable Dockerfiles (not nightly - those build from master branch)
+        for dockerfile in Dockerfile Dockerfile.light; do
+          if [ -f "$dockerfile" ]; then
+            echo "Updating $dockerfile..."
+            sed -i "s/ARG RING_VERSION_ARG=${{ steps.current_version.outputs.version }}/ARG RING_VERSION_ARG=${{ steps.latest_version.outputs.version }}/" "$dockerfile"
+          else
+            echo "Warning: $dockerfile not found, skipping..."
+          fi
+        done
+        
+        echo "Note: Nightly Dockerfiles are not updated as they build from master branch."
         echo "Files updated."
         echo "updated=true" >> "$GITHUB_OUTPUT"
 

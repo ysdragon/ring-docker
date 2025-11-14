@@ -73,28 +73,15 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Login to Docker Hub
+    - name: Login to registries
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
+      uses: ./.github/actions/registry-login
       with:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-    - name: Login to GitHub Container Registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Login to Quay.io
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        registry: quay.io
-        username: ${{ secrets.QUAY_USERNAME }}
-        password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        quay_username: ${{ secrets.QUAY_USERNAME }}
+        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
     - name: Extract Docker metadata
       id: meta
@@ -115,6 +102,8 @@ jobs:
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         
   build-matrix:
     name: Build Matrix ${{ matrix.variant }} - ${{ matrix.arch }}
@@ -147,10 +136,13 @@ jobs:
 
     - name: Login to registries
       if: github.event_name != 'pull_request'
-      run: |
-        echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin  
-        echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+      uses: ./.github/actions/registry-login
+      with:
+        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        quay_username: ${{ secrets.QUAY_USERNAME }}
+        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
     - name: Build and push arch-specific image
       id: build-and-push
@@ -165,6 +157,8 @@ jobs:
           ghcr.io/ysdragon/ring:${{ github.sha }}-${{ matrix.arch }}
           ${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-${{ matrix.arch }}
         provenance: false
+        cache-from: type=gha,scope=${{ matrix.arch }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
   manifest:
     name: Create Multi-arch Manifests
@@ -172,11 +166,17 @@ jobs:
     needs: [setup, build-matrix]
     if: always() && needs.build-matrix.result == 'success' && github.event_name != 'pull_request'
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
     - name: Login to registries
-      run: |
-        echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin  
-        echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+      uses: ./.github/actions/registry-login
+      with:
+        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        quay_username: ${{ secrets.QUAY_USERNAME }}
+        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
     - name: Extract final tags
       id: final-tags
@@ -206,20 +206,121 @@ jobs:
           done
         done
 
+  verify:
+    name: Verify Built Images
+    runs-on: ubuntu-latest
+    needs: [setup, build, manifest]
+    if: always() && (needs.build.result == 'success' || needs.manifest.result == 'success') && github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, light]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Determine tag
+      id: tag
+      run: |
+        IS_NIGHTLY="${{ needs.setup.outputs.is_nightly }}"
+        if [[ "$IS_NIGHTLY" == "true" ]]; then
+          if [[ "${{ matrix.variant }}" == "light" ]]; then
+            echo "tag=nightly-light" >> $GITHUB_OUTPUT
+          else
+            echo "tag=nightly" >> $GITHUB_OUTPUT
+          fi
+        else
+          if [[ "${{ matrix.variant }}" == "light" ]]; then
+            echo "tag=light" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+        fi
+    
+    - name: Pull image from GHCR
+      run: |
+        docker pull ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
+    
+    - name: Create test scripts
+      run: |
+        mkdir -p verify-test
+        echo 'see "Hello from Ring!" + nl' > verify-test/hello.ring
+        echo 'see "Ring verification passed" + nl' > verify-test/verify.ring
+    
+    - name: Test basic execution
+      run: |
+        docker run --rm \
+          -v $(pwd)/verify-test:/app \
+          -e RING_FILE=hello.ring \
+          ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
+    
+    - name: Test ring version command
+      run: |
+        docker run --rm ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }} ring -v
+    
+    - name: Test ring2exe (full variant only)
+      if: matrix.variant == 'full'
+      run: |
+        docker run --rm \
+          -v $(pwd)/verify-test:/app \
+          -e RING_FILE=hello.ring \
+          -e RING_OUTPUT_EXE=true \
+          ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
+        
+        if [ -f verify-test/hello ]; then
+          echo "✓ Executable created successfully"
+        else
+          echo "✗ Executable creation failed"
+          exit 1
+        fi
+    
+    - name: Verify multi-arch manifest
+      run: |
+        echo "Verifying manifest for ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}"
+        
+        MANIFEST=$(docker manifest inspect ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }})
+        ARCHES=$(echo "$MANIFEST" | jq -r '.manifests[].platform.architecture' | sort | tr '\n' ',')
+        
+        echo "Available architectures: $ARCHES"
+        
+        # Check for required architectures
+        if [[ ! "$ARCHES" =~ "amd64" ]]; then
+          echo "✗ Missing amd64 architecture"
+          exit 1
+        fi
+        
+        if [[ ! "$ARCHES" =~ "arm64" ]]; then
+          echo "✗ Missing arm64 architecture"
+          exit 1
+        fi
+        
+        # For light images, check for riscv64
+        if [[ "${{ matrix.variant }}" == "light" ]] && [[ ! "$ARCHES" =~ "riscv64" ]]; then
+          echo "⚠ Warning: Light image missing riscv64 architecture"
+        fi
+        
+        echo "✓ Manifest verification passed"
+
   cleanup:
     name: Cleanup Intermediate Images
     runs-on: ubuntu-latest
-    needs: [setup, build, build-matrix, manifest]
+    needs: [setup, build, build-matrix, manifest, verify]
     if: always() && needs.build-matrix.result == 'success' && github.event_name != 'pull_request'
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
     - name: Install Crane
       uses: iarekylew00t/crane-installer@v3
 
     - name: Login to registries
-      run: |
-        echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin  
-        echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | docker login quay.io -u "${{ secrets.QUAY_USERNAME }}" --password-stdin
+      uses: ./.github/actions/registry-login
+      with:
+        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        quay_username: ${{ secrets.QUAY_USERNAME }}
+        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
     - name: Delete intermediate SHA-tagged images
       run: |
