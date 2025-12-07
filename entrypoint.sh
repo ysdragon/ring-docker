@@ -171,19 +171,15 @@ if [ -n "$RING_FILE" ]; then
         SCRIPT_DIR=$(dirname "$RING_FILE")
         SCRIPT_BASE=$(basename "$RING_FILE")
         
-        pushd "$SCRIPT_DIR" > /dev/null
-        ring2exe $RING_ARGS "$SCRIPT_BASE"
-        popd > /dev/null
+        cd "$SCRIPT_DIR"
+        exec ring2exe $RING_ARGS "$SCRIPT_BASE"
     else
         # Run Ring script directly
         SCRIPT_DIR=$(dirname "$RING_FILE")
         SCRIPT_BASE=$(basename "$RING_FILE")
 
-        pushd "$SCRIPT_DIR" > /dev/null
-
-        ring $RING_ARGS "$SCRIPT_BASE"
-        
-        popd > /dev/null
+        cd "$SCRIPT_DIR"
+        exec ring $RING_ARGS "$SCRIPT_BASE"
     fi
 elif [ $# -gt 0 ]; then
     # If no RING_FILE but arguments are provided, execute them directly
