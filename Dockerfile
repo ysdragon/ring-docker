@@ -213,6 +213,9 @@ RUN apt-get update && apt-get install -y -qq --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
+# Configure Git to trust the /app directory
+RUN git config --global --add safe.directory /app
+
 # Copy installed Ring components from the builder stage
 COPY --from=builder /opt/ring /opt/ring
 COPY --from=builder /usr/bin /usr/bin
