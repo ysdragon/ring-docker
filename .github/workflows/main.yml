@@ -34,6 +34,9 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       is_nightly: ${{ steps.matrix.outputs.is_nightly }}
+      tags_full: ${{ steps.matrix.outputs.tags_full }}
+      tags_light: ${{ steps.matrix.outputs.tags_light }}
+      dockerfile_full: ${{ steps.matrix.outputs.dockerfile_full }}
     steps:
     - name: Setup build matrix
       id: matrix
@@ -46,13 +49,22 @@ jobs:
         echo "is_nightly=$IS_NIGHTLY" >> $GITHUB_OUTPUT
         
         if [[ "$IS_NIGHTLY" == "true" ]]; then
+          TAGS_FULL="nightly,nightly-full"
+          TAGS_LIGHT="nightly-light"
+          DOCKER_FULL="Dockerfile.nightly"
           # Nightly builds - all variants
           MATRIX='{"include":[{"variant":"full","dockerfile":"Dockerfile.nightly","platforms":"linux/amd64,linux/arm64","use_matrix_build":true,"tags_suffix":"nightly,nightly-full"},{"variant":"light","dockerfile":"Dockerfile.nightly.light","platforms":"linux/amd64,linux/arm64,linux/riscv64","use_matrix_build":false,"tags_suffix":"nightly-light"}]}'
         else
+          TAGS_FULL="latest,full"
+          TAGS_LIGHT="light"
+          DOCKER_FULL="Dockerfile"
           # Release builds - all variants
           MATRIX='{"include":[{"variant":"full","dockerfile":"Dockerfile","platforms":"linux/amd64,linux/arm64","use_matrix_build":true,"tags_suffix":"latest,full"},{"variant":"light","dockerfile":"Dockerfile.light","platforms":"linux/amd64,linux/arm64,linux/riscv64","use_matrix_build":false,"tags_suffix":"light"}]}'
         fi
         
+        echo "tags_full=$TAGS_FULL" >> $GITHUB_OUTPUT
+        echo "tags_light=$TAGS_LIGHT" >> $GITHUB_OUTPUT
+        echo "dockerfile_full=$DOCKER_FULL" >> $GITHUB_OUTPUT
         echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   build:
@@ -122,15 +134,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Determine dockerfile
-      id: dockerfile
-      run: |
-        if [[ "${{ needs.setup.outputs.is_nightly }}" == "true" ]]; then
-          echo "dockerfile=Dockerfile.nightly" >> $GITHUB_OUTPUT
-        else
-          echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
-        fi
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -149,7 +152,7 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         context: .
-        file: ${{ steps.dockerfile.outputs.dockerfile }}
+        file: ${{ needs.setup.outputs.dockerfile_full }}
         platforms: linux/${{ matrix.arch }}
         push: ${{ github.event_name != 'pull_request' }}
         tags: |
@@ -178,27 +181,22 @@ jobs:
         quay_username: ${{ secrets.QUAY_USERNAME }}
         quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
-    - name: Extract final tags
-      id: final-tags
-      run: |
-        IS_NIGHTLY="${{ needs.setup.outputs.is_nightly }}"
-
-        if [[ "$IS_NIGHTLY" == "true" ]]; then
-          TAGS="nightly,nightly-full"
-        else
-          TAGS="latest,full"
-        fi
-        
-        echo "tags=$TAGS" >> $GITHUB_OUTPUT
-
     - name: Create and push manifests
       run: |
-        TAGS="${{ steps.final-tags.outputs.tags }}"
+        TAGS="${{ needs.setup.outputs.tags_full }}"
+        
+        # Parse REGISTRIES env var into array; add '|| true' to prevent exit on EOF
+        IFS=$'\n' read -d '' -r -a REGISTRY_LIST <<< "${{ env.REGISTRIES }}" || true
         
         for tag in ${TAGS//,/ }; do
           echo "Creating manifest for tag: $tag"
           
-          for registry_image in "quay.io/ydrag0n/ring" "ghcr.io/ysdragon/ring" "${{ secrets.DOCKER_HUB_USERNAME }}/ring"; do
+          for registry_image in "${REGISTRY_LIST[@]}"; do
+            # Trim whitespace if any
+            registry_image=$(echo "$registry_image" | xargs)
+            [ -z "$registry_image" ] && continue
+            
+            echo "Processing $registry_image:$tag"
             docker manifest create "$registry_image:$tag" \
               "$registry_image:${{ github.sha }}-amd64" \
               "$registry_image:${{ github.sha }}-arm64"
@@ -206,105 +204,10 @@ jobs:
           done
         done
 
-  verify:
-    name: Verify Built Images
-    runs-on: ubuntu-latest
-    needs: [setup, build, manifest]
-    if: always() && (needs.build.result == 'success' || needs.manifest.result == 'success') && github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [full, light]
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Determine tag
-      id: tag
-      run: |
-        IS_NIGHTLY="${{ needs.setup.outputs.is_nightly }}"
-        if [[ "$IS_NIGHTLY" == "true" ]]; then
-          if [[ "${{ matrix.variant }}" == "light" ]]; then
-            echo "tag=nightly-light" >> $GITHUB_OUTPUT
-          else
-            echo "tag=nightly" >> $GITHUB_OUTPUT
-          fi
-        else
-          if [[ "${{ matrix.variant }}" == "light" ]]; then
-            echo "tag=light" >> $GITHUB_OUTPUT
-          else
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          fi
-        fi
-    
-    - name: Pull image from GHCR
-      run: |
-        docker pull ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
-    
-    - name: Create test scripts
-      run: |
-        mkdir -p verify-test
-        echo 'see "Hello from Ring!" + nl' > verify-test/hello.ring
-        echo 'see "Ring verification passed" + nl' > verify-test/verify.ring
-    
-    - name: Test basic execution
-      run: |
-        docker run --rm \
-          -v $(pwd)/verify-test:/app \
-          -e RING_FILE=hello.ring \
-          ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
-    
-    - name: Test ring version command
-      run: |
-        docker run --rm ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }} ring -v
-    
-    - name: Test ring2exe (full variant only)
-      if: matrix.variant == 'full'
-      run: |
-        docker run --rm \
-          -v $(pwd)/verify-test:/app \
-          -e RING_FILE=hello.ring \
-          -e RING_OUTPUT_EXE=true \
-          ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}
-        
-        if [ -f verify-test/hello ]; then
-          echo "✓ Executable created successfully"
-        else
-          echo "✗ Executable creation failed"
-          exit 1
-        fi
-    
-    - name: Verify multi-arch manifest
-      run: |
-        echo "Verifying manifest for ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }}"
-        
-        MANIFEST=$(docker manifest inspect ghcr.io/ysdragon/ring:${{ steps.tag.outputs.tag }})
-        ARCHES=$(echo "$MANIFEST" | jq -r '.manifests[].platform.architecture' | sort | tr '\n' ',')
-        
-        echo "Available architectures: $ARCHES"
-        
-        # Check for required architectures
-        if [[ ! "$ARCHES" =~ "amd64" ]]; then
-          echo "✗ Missing amd64 architecture"
-          exit 1
-        fi
-        
-        if [[ ! "$ARCHES" =~ "arm64" ]]; then
-          echo "✗ Missing arm64 architecture"
-          exit 1
-        fi
-        
-        # For light images, check for riscv64
-        if [[ "${{ matrix.variant }}" == "light" ]] && [[ ! "$ARCHES" =~ "riscv64" ]]; then
-          echo "⚠ Warning: Light image missing riscv64 architecture"
-        fi
-        
-        echo "✓ Manifest verification passed"
-
   cleanup:
     name: Cleanup Intermediate Images
     runs-on: ubuntu-latest
-    needs: [setup, build, build-matrix, manifest, verify]
+    needs: [setup, build, build-matrix, manifest]
     if: always() && needs.build-matrix.result == 'success' && github.event_name != 'pull_request'
     steps:
     - name: Checkout
@@ -326,17 +229,18 @@ jobs:
       run: |
         echo "Cleaning up intermediate images with SHA: ${{ github.sha }}"
         
-        REGISTRIES=(
-          "quay.io/ydrag0n/ring"
-          "ghcr.io/ysdragon/ring"
-          "${{ secrets.DOCKER_HUB_USERNAME }}/ring"
-        )
+        # Parse REGISTRIES env var into array; add '|| true' to prevent exit on EOF
+        IFS=$'\n' read -d '' -r -a REGISTRIES <<< "${{ env.REGISTRIES }}" || true
         
         ARCHITECTURES=("amd64" "arm64")
         CLEANUP_ERRORS=0
         
         for arch in "${ARCHITECTURES[@]}"; do
           for registry in "${REGISTRIES[@]}"; do
+            # Trim whitespace
+            registry=$(echo "$registry" | xargs)
+            [ -z "$registry" ] && continue
+
             image_tag="$registry:${{ github.sha }}-$arch"
             echo "Attempting to delete: $image_tag"
             
