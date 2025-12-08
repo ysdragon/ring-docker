@@ -225,6 +225,11 @@ COPY entrypoint.sh /entrypoint.sh
 COPY patches /patches
 RUN chmod +x /entrypoint.sh
 
+# OpenContainers Labels
+LABEL org.opencontainers.image.source=https://github.com/ysdragon/ring-docker
+LABEL org.opencontainers.image.description="Docker image for Ring programming language (full variant with all libraries)"
+LABEL org.opencontainers.image.licenses=MIT
+
 # Set the working directory for the application
 WORKDIR /app
 

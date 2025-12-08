@@ -211,6 +211,11 @@ COPY --from=builder /usr/lib /usr/lib
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# OpenContainers Labels
+LABEL org.opencontainers.image.source=https://github.com/ysdragon/ring-docker
+LABEL org.opencontainers.image.description="Nightly Docker image for Ring programming language (full variant built from master branch)"
+LABEL org.opencontainers.image.licenses=MIT
+
 # Set the working directory for the application
 WORKDIR /app
 
