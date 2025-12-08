@@ -3,8 +3,7 @@ name: Ring Docker CI
 on:
   push:
     branches: [ "master" ]
-    paths-ignore:
-    - '**.md'
+    paths-ignore: [ '**.md' ]
   release:
     types: [ published ]
   schedule:
@@ -28,232 +27,208 @@ env:
     ${{ secrets.DOCKER_HUB_USERNAME }}/ring
 
 jobs:
-  setup:
-    name: Setup Build Matrix
+  config:
+    name: Configuration
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-      is_nightly: ${{ steps.matrix.outputs.is_nightly }}
-      tags_full: ${{ steps.matrix.outputs.tags_full }}
-      tags_light: ${{ steps.matrix.outputs.tags_light }}
-      dockerfile_full: ${{ steps.matrix.outputs.dockerfile_full }}
+      is_nightly: ${{ steps.vars.outputs.is_nightly }}
+      tags: ${{ steps.vars.outputs.tags }}
+      tags_light: ${{ steps.vars.outputs.tags_light }}
+      dockerfile_full: ${{ steps.vars.outputs.dockerfile_full }}
+      dockerfile_light: ${{ steps.vars.outputs.dockerfile_light }}
     steps:
-    - name: Setup build matrix
-      id: matrix
-      run: |
-        IS_NIGHTLY="false"
-        if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event.inputs.force_nightly }}" == "true" ]]; then
-          IS_NIGHTLY="true"
-        fi
-        
-        echo "is_nightly=$IS_NIGHTLY" >> $GITHUB_OUTPUT
-        
-        if [[ "$IS_NIGHTLY" == "true" ]]; then
-          TAGS_FULL="nightly,nightly-full"
-          TAGS_LIGHT="nightly-light"
-          DOCKER_FULL="Dockerfile.nightly"
-          # Nightly builds - all variants
-          MATRIX='{"include":[{"variant":"full","dockerfile":"Dockerfile.nightly","platforms":"linux/amd64,linux/arm64","use_matrix_build":true,"tags_suffix":"nightly,nightly-full"},{"variant":"light","dockerfile":"Dockerfile.nightly.light","platforms":"linux/amd64,linux/arm64,linux/riscv64","use_matrix_build":false,"tags_suffix":"nightly-light"}]}'
-        else
-          TAGS_FULL="latest,full"
-          TAGS_LIGHT="light"
-          DOCKER_FULL="Dockerfile"
-          # Release builds - all variants
-          MATRIX='{"include":[{"variant":"full","dockerfile":"Dockerfile","platforms":"linux/amd64,linux/arm64","use_matrix_build":true,"tags_suffix":"latest,full"},{"variant":"light","dockerfile":"Dockerfile.light","platforms":"linux/amd64,linux/arm64,linux/riscv64","use_matrix_build":false,"tags_suffix":"light"}]}'
-        fi
-        
-        echo "tags_full=$TAGS_FULL" >> $GITHUB_OUTPUT
-        echo "tags_light=$TAGS_LIGHT" >> $GITHUB_OUTPUT
-        echo "dockerfile_full=$DOCKER_FULL" >> $GITHUB_OUTPUT
-        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+      - name: Determine Build Variables
+        id: vars
+        run: |
+          # Check for Nightly triggers
+          if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ inputs.force_nightly }}" == "true" ]]; then
+            IS_NIGHTLY="true"
+            echo "mode=Nightly" >> $GITHUB_STEP_SUMMARY
+            
+            echo "tags=nightly,nightly-full" >> $GITHUB_OUTPUT
+            echo "tags_light=nightly-light" >> $GITHUB_OUTPUT
+            echo "dockerfile_full=Dockerfile.nightly" >> $GITHUB_OUTPUT
+            echo "dockerfile_light=Dockerfile.nightly.light" >> $GITHUB_OUTPUT
+          else
+            IS_NIGHTLY="false"
+            echo "mode=Release/Push" >> $GITHUB_STEP_SUMMARY
+            
+            echo "tags=latest,full" >> $GITHUB_OUTPUT
+            echo "tags_light=light" >> $GITHUB_OUTPUT
+            echo "dockerfile_full=Dockerfile" >> $GITHUB_OUTPUT
+            echo "dockerfile_light=Dockerfile.light" >> $GITHUB_OUTPUT
+          fi
+          echo "is_nightly=$IS_NIGHTLY" >> $GITHUB_OUTPUT
 
-  build:
-    name: Build ${{ matrix.variant }} (${{ matrix.use_matrix_build && 'Multi-arch' || 'Single' }})
+  build-light:
+    name: Build Light (QEMU)
     runs-on: ubuntu-latest
-    needs: [setup]
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    needs: [config]
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+          
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up QEMU
-      if: matrix.use_matrix_build == false
-      uses: docker/setup-qemu-action@v3
+      - name: Login to registries
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/registry-login
+        with:
+          docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          quay_username: ${{ secrets.QUAY_USERNAME }}
+          quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-    - name: Login to registries
-      if: github.event_name != 'pull_request'
-      uses: ./.github/actions/registry-login
-      with:
-        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        quay_username: ${{ secrets.QUAY_USERNAME }}
-        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Extract Docker metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRIES }}
-        tags: |
-          type=raw,value=${{ matrix.tags_suffix }},enable={{is_default_branch}}
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRIES }}
+          tags: |
+            type=raw,value=${{ needs.config.outputs.tags_light }},enable={{is_default_branch}}
 
-    - name: Build and push (Single build)
-      if: matrix.use_matrix_build == false
-      id: build-single
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: ${{ matrix.dockerfile }}
-        platforms: ${{ matrix.platforms }}
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        
-  build-matrix:
-    name: Build Matrix ${{ matrix.variant }} - ${{ matrix.arch }}
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ needs.config.outputs.dockerfile_light }}
+          platforms: linux/amd64,linux/arm64,linux/riscv64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=light
+          cache-to: type=gha,mode=max,scope=light
+
+  build-full:
+    name: Build Full (${{ matrix.arch }})
+    needs: [config]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    needs: [setup]
-    if: needs.setup.outputs.is_nightly == 'true' || github.event_name == 'push' || github.event_name == 'release'
+    if: needs.config.outputs.is_nightly == 'true' || github.event_name == 'push' || github.event_name == 'release'
     strategy:
       fail-fast: false
       matrix:
-        include:
-        - variant: full
-          arch: amd64
-        - variant: full
-          arch: arm64
+        arch: [amd64, arm64]
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Login to registries
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/registry-login
+        with:
+          docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          quay_username: ${{ secrets.QUAY_USERNAME }}
+          quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
-    - name: Login to registries
-      if: github.event_name != 'pull_request'
-      uses: ./.github/actions/registry-login
-      with:
-        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        quay_username: ${{ secrets.QUAY_USERNAME }}
-        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and push arch-specific image
-      id: build-and-push
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        file: ${{ needs.setup.outputs.dockerfile_full }}
-        platforms: linux/${{ matrix.arch }}
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: |
-          quay.io/ydrag0n/ring:${{ github.sha }}-${{ matrix.arch }}
-          ghcr.io/ysdragon/ring:${{ github.sha }}-${{ matrix.arch }}
-          ${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-${{ matrix.arch }}
-        provenance: false
-        cache-from: type=gha,scope=${{ matrix.arch }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Build and Push (Arch Specific)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ needs.config.outputs.dockerfile_full }}
+          platforms: linux/${{ matrix.arch }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            quay.io/ydrag0n/ring:${{ github.sha }}-${{ matrix.arch }}
+            ghcr.io/ysdragon/ring:${{ github.sha }}-${{ matrix.arch }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/ring:${{ github.sha }}-${{ matrix.arch }}
+          provenance: false
+          cache-from: type=gha,scope=full-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=full-${{ matrix.arch }}
 
-  manifest:
-    name: Create Multi-arch Manifests
+  merge-full:
+    name: Create Full Manifest
     runs-on: ubuntu-latest
-    needs: [setup, build-matrix]
-    if: always() && needs.build-matrix.result == 'success' && github.event_name != 'pull_request'
+    needs: [config, build-full]
+    if: github.event_name != 'pull_request'
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Login to registries
-      uses: ./.github/actions/registry-login
-      with:
-        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        quay_username: ${{ secrets.QUAY_USERNAME }}
-        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Create and push manifests
-      run: |
-        TAGS="${{ needs.setup.outputs.tags_full }}"
-        
-        # Parse REGISTRIES env var into array; add '|| true' to prevent exit on EOF
-        IFS=$'\n' read -d '' -r -a REGISTRY_LIST <<< "${{ env.REGISTRIES }}" || true
-        
-        for tag in ${TAGS//,/ }; do
-          echo "Creating manifest for tag: $tag"
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          quay_username: ${{ secrets.QUAY_USERNAME }}
+          quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Create and Push Manifests
+        run: |
+          TARGET_TAGS="${{ needs.config.outputs.tags }}"
+          SHA="${{ github.sha }}"
           
-          for registry_image in "${REGISTRY_LIST[@]}"; do
-            # Trim whitespace if any
-            registry_image=$(echo "$registry_image" | xargs)
-            [ -z "$registry_image" ] && continue
+          REPO_LIST=(${{ env.REGISTRIES }})
+          
+          for tag in ${TARGET_TAGS//,/ }; do
+            echo "::group::Processing tag: $tag"
             
-            echo "Processing $registry_image:$tag"
-            docker manifest create "$registry_image:$tag" \
-              "$registry_image:${{ github.sha }}-amd64" \
-              "$registry_image:${{ github.sha }}-arm64"
-            docker manifest push "$registry_image:$tag"
+            for repo in "${REPO_LIST[@]}"; do
+              echo "Creating manifest for $repo:$tag"
+              
+              docker manifest create "$repo:$tag" \
+                "$repo:$SHA-amd64" \
+                "$repo:$SHA-arm64"
+                
+              docker manifest push "$repo:$tag"
+            done
+            echo "::endgroup::"
           done
-        done
 
   cleanup:
-    name: Cleanup Intermediate Images
+    name: Cleanup Intermediate Tags
     runs-on: ubuntu-latest
-    needs: [setup, build, build-matrix, manifest]
-    if: always() && needs.build-matrix.result == 'success' && github.event_name != 'pull_request'
+    needs: [merge-full]
+    if: always() && needs.merge-full.result == 'success'
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install Crane
-      uses: iarekylew00t/crane-installer@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Login to registries
-      uses: ./.github/actions/registry-login
-      with:
-        docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        quay_username: ${{ secrets.QUAY_USERNAME }}
-        quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Install Crane
+        uses: iarekylew00t/crane-installer@v4
 
-    - name: Delete intermediate SHA-tagged images
-      run: |
-        echo "Cleaning up intermediate images with SHA: ${{ github.sha }}"
-        
-        # Parse REGISTRIES env var into array; add '|| true' to prevent exit on EOF
-        IFS=$'\n' read -d '' -r -a REGISTRIES <<< "${{ env.REGISTRIES }}" || true
-        
-        ARCHITECTURES=("amd64" "arm64")
-        CLEANUP_ERRORS=0
-        
-        for arch in "${ARCHITECTURES[@]}"; do
-          for registry in "${REGISTRIES[@]}"; do
-            # Trim whitespace
-            registry=$(echo "$registry" | xargs)
-            [ -z "$registry" ] && continue
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          quay_username: ${{ secrets.QUAY_USERNAME }}
+          quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
-            image_tag="$registry:${{ github.sha }}-$arch"
-            echo "Attempting to delete: $image_tag"
-            
-            if crane delete "$image_tag" 2>/dev/null; then
-              echo "✓ Successfully deleted: $image_tag"
-            else
-              echo "⚠ Failed to delete or not found: $image_tag"
-              CLEANUP_ERRORS=$((CLEANUP_ERRORS + 1))
-            fi
+      - name: Delete Intermediate Images
+        run: |
+          SHA="${{ github.sha }}"
+          REPO_LIST=(${{ env.REGISTRIES }})
+          ARCHS=("amd64" "arm64")
+          
+          for repo in "${REPO_LIST[@]}"; do
+            for arch in "${ARCHS[@]}"; do
+              TAG="$repo:$SHA-$arch"
+              echo "Deleting $TAG..."
+              if ! crane delete "$TAG" 2>/dev/null; then
+                 echo "::warning::Failed to delete $TAG (might not exist or permission error)"
+              fi
+            done
           done
-        done
-        
-        echo "Cleanup completed with $CLEANUP_ERRORS errors."
-        if [ $CLEANUP_ERRORS -gt 0 ]; then
-          echo "Some intermediate images could not be cleaned up, but this is not critical."
-        fi
