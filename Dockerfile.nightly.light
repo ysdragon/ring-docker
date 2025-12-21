@@ -1,40 +1,26 @@
 # Stage 1: Builder
-FROM ubuntu:24.04 AS builder
+FROM alpine:3.23 AS builder
 
-# Set environment variables to reduce interaction during package installation
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 \
+ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Install necessary build packages
-RUN apt-get update && apt-get install -y -qq --no-install-recommends \
-    bc \
-    gcc \
-    g++ \
+# Install build packages
+RUN apk add --no-cache \
+    build-base \
     ca-certificates \
     git \
-    unixodbc \
     unixodbc-dev \
-    libmariadb-dev-compat \
-    libpq-dev \
-    libcurl4-gnutls-dev \
-    libssl-dev \
-    libuv1-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+    mariadb-dev \
+    postgresql16-dev \
+    curl-dev \
+    openssl-dev \
+    libuv-dev \
+    bash \
+    bc
 
-# Create /opt/ring directory
-RUN mkdir -p /opt/ring
-
-# Clone Ring from master branch for nightly builds
+# Clone and build Ring
 WORKDIR /opt/ring
 RUN git clone --depth 1 --branch master -q https://github.com/ring-lang/ring .
-
-# Reduce image size by removing unnecessary directories
-RUN rm -rf applications documents marketing samples \
-    tools/editors tools/formdesigner tools/help2wiki tools/ringnotepad tools/string2constant tools/ringrepl tools/tryringonline tools/folder2qrc tools/findinfiles language/tests \
-    extensions/android extensions/libdepwin extensions/ringfreeglut extensions/ringallegro extensions/ringbeep extensions/ringmouseevent extensions/ringnappgui extensions/ringwinapi extensions/ringwincreg extensions/ringwinlib extensions/ringraylib5 extensions/ringtilengine extensions/ringlibui extensions/ringqt extensions/ringrogueutil extensions/ringsdl extensions/webassembly extensions/tutorial extensions/microcontroller
 
 RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
     && find . -type f -name "*.sh" -exec sed -i 's/-L \/usr\/lib\/i386-linux-gnu//g' {} + \
@@ -51,56 +37,120 @@ RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
         -ringodbc \
         -ringpdfgen \
         -ringconsolecolors \
+        -ringrogueutil \
         -ringcurl \
         -ringlibuv \
         -ringopenssl \
         -ringsockets \
         -ringfastpro \
         -ringpostgresql \
+        -ringstbimage \
         -ringsqlite \
         -ring2exe \
-        -ringpm \
-    && cd .. && bin/install.sh
+        -ringpm
+
+# Clean
+RUN rm -rf .git \
+    applications \
+    samples \
+    documents \
+    marketing \
+    tools/editors \
+    tools/formdesigner \
+    tools/help2wiki \
+    tools/ringnotepad \
+    tools/string2constant \
+    tools/ringrepl \
+    tools/tryringonline \
+    tools/folder2qrc \
+    tools/findinfiles \
+    tools/ringpmgui \
+    tools/ringfmt \
+    language/tests \
+    language/visualsrc \
+    extensions/android \
+    extensions/libdepwin \
+    extensions/ringfreeglut \
+    extensions/ringallegro \
+    extensions/ringbeep \
+    extensions/ringmouseevent \
+    extensions/ringnappgui \
+    extensions/ringwinapi \
+    extensions/ringwincreg \
+    extensions/ringwinlib \
+    extensions/ringraylib5 \
+    extensions/ringtilengine \
+    extensions/ringlibui \
+    extensions/ringqt \
+    extensions/ringsdl \
+    extensions/webassembly \
+    extensions/tutorial \
+    extensions/microcontroller \
+    extensions/ringopengl \
+    extensions/ringhttplib32 \
+    extensions/codegen \
+    libraries/gameengine \
+    libraries/guilib \
+    && find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.o" -o -name "*.a" \) -delete \
+    && find . -type f \( -name "*.md" -o -name "*.txt" -o -name "README*" -o -name "LICENSE*" -o -name "*.html" \) -delete \
+    # Remove empty directories
+    && find . -type d -empty -delete \
+    # Strip binaries and libraries to reduce size
+    && strip --strip-all bin/ring bin/ring2exe bin/ringpm \
+    && find lib -name "*.so" -exec strip --strip-all {} \;
 
 # Stage 2: Runtime
-FROM ubuntu:24.04 AS runtime
+FROM alpine:3.23 AS runtime
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 \
+ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     RING_VARIANT=light
 
-# Install necessary packages
-RUN apt-get update && apt-get install -y -qq --no-install-recommends \
-    bc \
-    gcc \
-    g++ \
+# Install only runtime libraries (based on ldd output)
+RUN apk add --no-cache \
+    # Core
+    libgcc \
+    libstdc++ \
     ca-certificates \
-    git \
+    # For ringcurl/ringinternet
+    libcurl \
+    # For ringmysql
+    mariadb-connector-c \
+    # For ringpostgresql
+    libpq \
+    # For ringopenssl
+    openssl \
+    # For ringodbc
     unixodbc \
-    unixodbc-dev \
-    libmariadb-dev-compat \
-    libpq-dev \
-    libcurl4-gnutls-dev \
-    libssl-dev \
-    libuv1-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+    # For ringlibuv
+    libuv \
+    # Tools
+    git \
+    bash
 
-# Configure Git to trust the /app directory
+# Configure Git
 RUN git config --global --add safe.directory /app
 
-# Copy installed Ring components from the builder stage
+# Copy Ring installation (extensions, ringpm packages, etc.)
 COPY --from=builder /opt/ring /opt/ring
-COPY --from=builder /usr/bin /usr/bin
-COPY --from=builder /usr/lib /usr/lib
+
+# Copy Ring binaries
+RUN cd /opt/ring/bin \
+    && ./install.sh
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# OpenContainers Labels
+# Verify all libraries resolve
+RUN echo "Verifying dependencies..." \
+    && ldd /usr/bin/ring | grep -q "not found" && exit 1 || true \
+    && for lib in /opt/ring/lib/*.so; do \
+        if ldd "$lib" 2>/dev/null | grep -q "not found"; then \
+            echo "Missing deps for $lib:" && ldd "$lib" | grep "not found" && exit 1; \
+        fi; \
+    done \
+    && echo "All dependencies OK!"
+
 LABEL org.opencontainers.image.source=https://github.com/ysdragon/ring-docker
 LABEL org.opencontainers.image.description="Nightly Docker image for Ring programming language (light variant built from master branch)"
 LABEL org.opencontainers.image.licenses=MIT
