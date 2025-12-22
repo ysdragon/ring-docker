@@ -88,10 +88,9 @@ RUN rm -rf .git \
     extensions/microcontroller \
     extensions/ringopengl \
     extensions/ringhttplib32 \
-    extensions/codegen \
     libraries/gameengine \
     libraries/guilib \
-    && find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.o" -o -name "*.a" \) -delete \
+    && find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.o" \) -delete \
     && find . -type f \( -name "*.md" -o -name "*.txt" -o -name "README*" -o -name "LICENSE*" -o -name "*.html" \) -delete \
     # Remove empty directories
     && find . -type d -empty -delete \
