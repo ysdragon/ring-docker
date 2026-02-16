@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 # Set the Ring release version (used for initial clone)
-ARG RING_VERSION_ARG=1.25
+ARG RING_VERSION_ARG=1.26
 ENV RING_VERSION=$RING_VERSION_ARG
 
 # Install necessary build packages
