@@ -159,8 +159,8 @@ jobs:
   merge-full:
     name: Create Full Manifest
     runs-on: ubuntu-latest
-    needs: [config, build-full]
-    if: github.event_name != 'pull_request'
+    needs: [config, build-light, build-full]
+    if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -199,8 +199,8 @@ jobs:
   cleanup:
     name: Cleanup Intermediate Tags
     runs-on: ubuntu-latest
-    needs: [merge-full]
-    if: always() && needs.merge-full.result == 'success'
+    needs: [config, build-light, build-full, merge-full]
+    if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success' && needs.merge-full.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
