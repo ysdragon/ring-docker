@@ -18,6 +18,10 @@ RUN apk add --no-cache \
     bash \
     bc
 
+
+# Map MariaDB config to MySQL name to satisfy pkg-config dependencies
+RUN ln -s /usr/lib/pkgconfig/mariadb.pc /usr/lib/pkgconfig/mysqlclient.pc
+
 # Clone and build Ring
 WORKDIR /opt/ring
 RUN git clone --depth 1 --branch master -q https://github.com/ring-lang/ring .
