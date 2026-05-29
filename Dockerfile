@@ -14,6 +14,7 @@ ENV RING_VERSION=$RING_VERSION_ARG
 RUN apt-get update && apt-get install -y -qq --no-install-recommends \
     bc \
     build-essential \
+    pkgconf \
     wget \
     unzip \
     cmake \
@@ -128,7 +129,6 @@ RUN if [ "$(echo "$RING_VERSION < 1.22" | bc)" -eq 1 ]; then \
 
 # Customize the build process and build/install Ring
 RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
-    && find . -type f -name "*.sh" -exec sed -i 's/-L \/usr\/lib\/i386-linux-gnu//g' {} + \
     && find extensions/ringqt -name "*.sh" -exec sed -i 's/\bmake\b/make -j$(nproc)/g' {} + \
     && rm -rf extensions/ringraylib5/src/linux_raylib-5 \
     && rm -rf extensions/ringtilengine/linux_tilengine \
@@ -139,7 +139,6 @@ RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
     && sed -i '/extensions\/ringtilengine/d' bin/install.sh \
     && sed -i 's/ -I linux//g; s/ -L \$PWD\/linux//g' extensions/ringlibui/buildgcc.sh \
     && sed -i '/extensions\/ringlibui\/linux/d' bin/install.sh \
-    && sed -i 's/-L \/usr\/local\/pgsql\/lib//g' extensions/ringpostgresql/buildgcc.sh \
     && cd build \
     && bash buildgcc.sh -ring -ringallegro -ringfreeglut -ringmurmurhash -ringqt-core -ringqt-light -ringqt -ringstbimage -ringzip -ringhttplib -ringmysql -ringraylib -ringtilengine -ringthreads -ringcjson -ringinternet -ringodbc -ringrogueutil -ringpdfgen -ringconsolecolors -ringlibui -ringopengl -ringsdl -ringcurl -ringlibuv -ringopenssl -ringsockets -ringfastpro -ringpostgresql -ringsqlite -ring2exe -ringpm \
     && cd .. && bin/install.sh
@@ -158,6 +157,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y -qq --no-install-recommends \
     bc \
     build-essential \
+    pkgconf \
     wget \
     unzip \
     cmake \

@@ -27,8 +27,6 @@ WORKDIR /opt/ring
 RUN git clone --depth 1 --branch master -q https://github.com/ring-lang/ring .
 
 RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
-    && find . -type f -name "*.sh" -exec sed -i 's/-L \/usr\/lib\/i386-linux-gnu//g' {} + \
-    && sed -i 's/-L \/usr\/local\/pgsql\/lib//g' extensions/ringpostgresql/buildgcc.sh \
     && cd build \
     && bash buildgcc.sh -ring \
         -ringmurmurhash \

@@ -15,11 +15,12 @@ RUN apt-get update && apt-get install -y -qq --no-install-recommends \
     bc \
     gcc \
     g++ \
+    pkgconf \
     ca-certificates \
     git \
     unixodbc \
     unixodbc-dev \
-    libmariadb-dev-compat \
+    libmysqlclient-dev \
     libpq-dev \
     libcurl4-gnutls-dev \
     libssl-dev \
@@ -41,8 +42,6 @@ RUN rm -rf applications documents marketing samples \
     extensions/android extensions/libdepwin extensions/ringfreeglut extensions/ringallegro extensions/ringbeep extensions/ringmouseevent extensions/ringnappgui extensions/ringwinapi extensions/ringwincreg extensions/ringwinlib extensions/ringraylib5 extensions/ringtilengine extensions/ringlibui extensions/ringqt extensions/ringrogueutil extensions/ringsdl extensions/webassembly extensions/tutorial extensions/microcontroller
 
 RUN find . -type f -name "*.sh" -exec sed -i 's/\bsudo\b//g' {} + \
-    && find . -type f -name "*.sh" -exec sed -i 's/-L \/usr\/lib\/i386-linux-gnu//g' {} + \
-    && sed -i 's/-L \/usr\/local\/pgsql\/lib//g' extensions/ringpostgresql/buildgcc.sh \
     && cd build \
     && bash buildgcc.sh -ring \
         -ringmurmurhash \
@@ -80,11 +79,12 @@ RUN apt-get update && apt-get install -y -qq --no-install-recommends \
     bc \
     gcc \
     g++ \
+    pkgconf \
     ca-certificates \
     git \
     unixodbc \
     unixodbc-dev \
-    libmariadb-dev-compat \
+    libmysqlclient-dev \
     libpq-dev \
     libcurl4-gnutls-dev \
     libssl-dev \
