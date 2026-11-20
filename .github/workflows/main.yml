@@ -15,10 +15,12 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  packages: write
-  id-token: write
 
 env:
   REGISTRIES: |
@@ -30,6 +32,7 @@ jobs:
   config:
     name: Configuration
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       is_nightly: ${{ steps.vars.outputs.is_nightly }}
       tags: ${{ steps.vars.outputs.tags }}
@@ -37,6 +40,20 @@ jobs:
       dockerfile_full: ${{ steps.vars.outputs.dockerfile_full }}
       dockerfile_light: ${{ steps.vars.outputs.dockerfile_light }}
     steps:
+      - name: Validate registry credentials
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_ROBOT_TOKEN: ${{ secrets.QUAY_ROBOT_TOKEN }}
+        run: |
+          for name in DOCKER_HUB_USERNAME DOCKER_HUB_TOKEN QUAY_USERNAME QUAY_ROBOT_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name secret is required"
+              exit 1
+            fi
+          done
+
       - name: Determine Build Variables
         id: vars
         run: |
@@ -64,9 +81,13 @@ jobs:
     name: Build Light (QEMU)
     runs-on: ubuntu-latest
     needs: [config]
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Login to registries
         if: github.event_name != 'pull_request'
@@ -79,21 +100,21 @@ jobs:
           quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRIES }}
           tags: |
-            type=raw,value=${{ needs.config.outputs.tags_light }},enable={{is_default_branch}}
+            type=raw,value=${{ needs.config.outputs.tags_light }}
 
       - name: Build and Push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ needs.config.outputs.dockerfile_light }}
@@ -108,6 +129,10 @@ jobs:
     name: Build Full (${{ matrix.arch }})
     needs: [config]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
     if: needs.config.outputs.is_nightly == 'true' || github.event_name == 'push' || github.event_name == 'release'
     strategy:
       fail-fast: false
@@ -115,7 +140,7 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Login to registries
         if: github.event_name != 'pull_request'
@@ -128,10 +153,10 @@ jobs:
           quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Build and Push (Arch Specific)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ needs.config.outputs.dockerfile_full }}
@@ -148,11 +173,15 @@ jobs:
   merge-full:
     name: Create Full Manifest
     runs-on: ubuntu-latest
-    needs: [config, build-light, build-full]
-    if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success'
+    needs: [config, build-full]
+    if: github.event_name != 'pull_request' && needs.build-full.result == 'success'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -188,14 +217,18 @@ jobs:
   cleanup:
     name: Cleanup Intermediate Tags
     runs-on: ubuntu-latest
-    needs: [config, build-light, build-full, merge-full]
-    if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success' && needs.merge-full.result == 'success'
+    needs: [config, build-full, merge-full]
+    if: github.event_name != 'pull_request' && needs.build-full.result == 'success' && needs.merge-full.result == 'success'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Crane
-        uses: iarekylew00t/crane-installer@v4
+        uses: iarekylew00t/crane-installer@05ef7fac709adc5ff491596ab8c73923a94e02ed # v4
 
       - name: Login to registries
         uses: ./.github/actions/registry-login

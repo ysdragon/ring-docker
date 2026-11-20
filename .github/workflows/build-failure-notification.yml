@@ -5,17 +5,24 @@ on:
     workflows: ["Update Ring Language Version"]
     types: [completed]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  issues: write
 
 jobs:
   notify:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'failure'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
     steps:
     - name: Create Issue for Failed Build
-      uses: actions/github-script@v9
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
       with:
         script: |
           const runUrl = context.payload.workflow_run.html_url;
@@ -61,7 +68,7 @@ jobs:
             '- Git push operation encountered an error',
             '',
             '### Next Steps',
-            '1. **Check the logs:** Review the [workflow logs](${runUrl}) for specific error details',
+            `1. **Check the logs:** Review the [workflow logs](${runUrl}) for specific error details`,
             '2. **Manual update:** If needed, manually update the Ring version in `Dockerfile` and `Dockerfile.light`',
             '3. **Verify GitHub API:** Ensure Ring repository releases are accessible',
             '4. **Check permissions:** Verify workflow has correct write permissions',

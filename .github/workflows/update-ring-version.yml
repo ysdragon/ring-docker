@@ -5,31 +5,46 @@ on:
   - cron: '0 3 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         token: ${{ secrets.PAT_TOKEN }}
 
     - name: Get latest Ring version from GitHub API
       id: latest_version
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        LATEST_TAG=$(curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ring-lang/ring/releases/latest | jq -r .tag_name)
-        # The tag is usually 'v1.23', we need to strip the 'v'
+        set -euo pipefail
+        LATEST_TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+          https://api.github.com/repos/ring-lang/ring/releases/latest | jq -er .tag_name)
         LATEST_VERSION=${LATEST_TAG#v}
+        if [[ ! "$LATEST_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "::error::Unexpected Ring version reported by GitHub: $LATEST_TAG"
+          exit 1
+        fi
         echo "Latest Ring version: $LATEST_VERSION"
         echo "version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Get current version from Dockerfile
       id: current_version
       run: |
+        set -euo pipefail
         CURRENT_VERSION=$(grep 'ARG RING_VERSION_ARG=' Dockerfile | cut -d'=' -f2)
         echo "Current version in Dockerfile: $CURRENT_VERSION"
         echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
@@ -37,28 +52,53 @@ jobs:
     - name: Compare versions and update if needed
       id: update_files
       if: steps.latest_version.outputs.version != steps.current_version.outputs.version
+      env:
+        CURRENT_VERSION: ${{ steps.current_version.outputs.version }}
+        LATEST_VERSION: ${{ steps.latest_version.outputs.version }}
       run: |
+        set -euo pipefail
         echo "New version found. Updating stable Dockerfile variants..."
-        
+
         # Only update stable Dockerfiles (not nightly - those build from master branch)
         for dockerfile in Dockerfile Dockerfile.light; do
           if [ -f "$dockerfile" ]; then
             echo "Updating $dockerfile..."
-            sed -i "s/ARG RING_VERSION_ARG=${{ steps.current_version.outputs.version }}/ARG RING_VERSION_ARG=${{ steps.latest_version.outputs.version }}/" "$dockerfile"
+            sed -i "s/ARG RING_VERSION_ARG=${CURRENT_VERSION}/ARG RING_VERSION_ARG=${LATEST_VERSION}/" "$dockerfile"
           else
             echo "Warning: $dockerfile not found, skipping..."
           fi
         done
-        
+
         echo "Note: Nightly Dockerfiles are not updated as they build from master branch."
         echo "Files updated."
         echo "updated=true" >> "$GITHUB_OUTPUT"
 
-    - name: Commit and push changes
+    - name: Open pull request for the version bump
       if: steps.update_files.outputs.updated == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        LATEST_VERSION: ${{ steps.latest_version.outputs.version }}
       run: |
+        set -euo pipefail
+        BRANCH="bot/ring-v${LATEST_VERSION}"
+
+        if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+          echo "A pull request already exists for $BRANCH. Skipping."
+          exit 0
+        fi
+
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git checkout -b "$BRANCH"
         git add Dockerfile Dockerfile.light
-        git commit -m "Bump Ring language to v${{ steps.latest_version.outputs.version }}"
-        git push
+        git commit -m "Bump Ring language to v${LATEST_VERSION}"
+
+        if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+          git push --force origin "$BRANCH"
+        else
+          git push -u origin "$BRANCH"
+        fi
+
+        gh pr create --base master --head "$BRANCH" \
+          --title "Bump Ring language to v${LATEST_VERSION}" \
+          --body "Automated update of the stable Dockerfiles to Ring v${LATEST_VERSION}."

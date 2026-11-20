@@ -9,44 +9,48 @@ on:
       - 'patches/**'
       - '.github/workflows/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   lint:
     name: Lint Dockerfiles and Scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       
       - name: Run Hadolint on Dockerfile
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
           failure-threshold: warning
       
       - name: Run Hadolint on Dockerfile.light
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile.light
           failure-threshold: warning
       
       - name: Run Hadolint on Dockerfile.nightly
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile.nightly
           failure-threshold: warning
       
       - name: Run Hadolint on Dockerfile.nightly.light
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile.nightly.light
           failure-threshold: warning
       
       - name: Run Shellcheck
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         with:
           scandir: '.'
           severity: warning
@@ -54,6 +58,7 @@ jobs:
   build-test:
     name: Test Build - ${{ matrix.variant }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -64,13 +69,13 @@ jobs:
             dockerfile: Dockerfile
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       
       - name: Build ${{ matrix.variant }} image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -120,10 +125,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, build-test]
     if: always()
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Check results
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          BUILD_RESULT: ${{ needs.build-test.result }}
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ] || [ "${{ needs.build-test.result }}" != "success" ]; then
+          if [ "$LINT_RESULT" != "success" ] || [ "$BUILD_RESULT" != "success" ]; then
             echo "::error::PR validation failed. Please fix the issues above."
             exit 1
           fi
@@ -131,7 +143,10 @@ jobs:
       
       - name: Comment on PR
         if: failure()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          BUILD_RESULT: ${{ needs.build-test.result }}
         with:
           script: |
             const comment = `## ❌ PR Validation Failed
@@ -139,8 +154,8 @@ jobs:
             Some validation checks did not pass. Please review the workflow logs and address the issues.
             
             **Failed Jobs:**
-            - Lint: ${{ needs.lint.result }}
-            - Build Test: ${{ needs.build-test.result }}
+            - Lint: ${process.env.LINT_RESULT}
+            - Build Test: ${process.env.BUILD_RESULT}
             
             [View Workflow Run](${context.payload.pull_request.html_url}/checks)`;
             
