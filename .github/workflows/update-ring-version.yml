@@ -57,7 +57,7 @@ jobs:
         LATEST_VERSION: ${{ steps.latest_version.outputs.version }}
       run: |
         set -euo pipefail
-        echo "New version found. Updating stable Dockerfile variants..."
+        echo "New version found. Updating stable Dockerfile variants and README..."
 
         # Only update stable Dockerfiles (not nightly - those build from master branch)
         for dockerfile in Dockerfile Dockerfile.light; do
@@ -68,6 +68,14 @@ jobs:
             echo "Warning: $dockerfile not found, skipping..."
           fi
         done
+
+        # Keep the documented default version in sync with the Dockerfiles
+        if grep -q "\`${CURRENT_VERSION}\`" README.md; then
+          echo "Updating README.md..."
+          sed -i "s/\`${CURRENT_VERSION}\`/\`${LATEST_VERSION}\`/g" README.md
+        else
+          echo "Warning: no \`${CURRENT_VERSION}\` reference found in README.md, skipping..."
+        fi
 
         echo "Note: Nightly Dockerfiles are not updated as they build from master branch."
         echo "Files updated."
@@ -90,7 +98,7 @@ jobs:
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
         git checkout -b "$BRANCH"
-        git add Dockerfile Dockerfile.light
+        git add Dockerfile Dockerfile.light README.md
         git commit -m "Bump Ring language to v${LATEST_VERSION}"
 
         if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
@@ -101,4 +109,4 @@ jobs:
 
         gh pr create --base master --head "$BRANCH" \
           --title "Bump Ring language to v${LATEST_VERSION}" \
-          --body "Automated update of the stable Dockerfiles to Ring v${LATEST_VERSION}."
+          --body "Automated update of the stable Dockerfiles and README to Ring v${LATEST_VERSION}."

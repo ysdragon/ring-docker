@@ -69,7 +69,7 @@ jobs:
             '',
             '### Next Steps',
             `1. **Check the logs:** Review the [workflow logs](${runUrl}) for specific error details`,
-            '2. **Manual update:** If needed, manually update the Ring version in `Dockerfile` and `Dockerfile.light`',
+            '2. **Manual update:** If needed, manually update the Ring version in `Dockerfile`, `Dockerfile.light` and `README.md`',
             '3. **Verify GitHub API:** Ensure Ring repository releases are accessible',
             '4. **Check permissions:** Verify workflow has correct write permissions',
             '',
