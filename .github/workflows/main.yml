@@ -65,19 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [config]
     steps:
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-          
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to registries
         if: github.event_name != 'pull_request'
@@ -90,21 +79,21 @@ jobs:
           quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRIES }}
           tags: |
             type=raw,value=${{ needs.config.outputs.tags_light }},enable={{is_default_branch}}
 
       - name: Build and Push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ needs.config.outputs.dockerfile_light }}
@@ -126,7 +115,7 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to registries
         if: github.event_name != 'pull_request'
@@ -139,10 +128,10 @@ jobs:
           quay_robot_token: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and Push (Arch Specific)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ needs.config.outputs.dockerfile_full }}
@@ -163,7 +152,7 @@ jobs:
     if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -203,7 +192,7 @@ jobs:
     if: github.event_name != 'pull_request' && needs.build-light.result == 'success' && needs.build-full.result == 'success' && needs.merge-full.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Crane
         uses: iarekylew00t/crane-installer@v4
