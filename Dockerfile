@@ -88,7 +88,8 @@ RUN mkdir -p /opt/tilengine
 
 # Clone and build tilengine
 WORKDIR /opt/tilengine
-RUN git clone --depth 1 -q https://github.com/megamarc/Tilengine . \
+RUN git clone -q https://github.com/megamarc/Tilengine . \
+    && git checkout -q 22ac89ebb0390168bed0c9f96b07971bd3b84b79 \
     && cd src \
     && make -j$(nproc) \
     && cd ../ \
